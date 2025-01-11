@@ -1,6 +1,6 @@
 from collections.abc import Mapping, Sequence
-from os import path
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -9,7 +9,6 @@ from core.callback_handler.workflow_tool_callback_handler import DifyWorkflowCal
 from core.file import File, FileTransferMethod, FileType
 from core.tools.entities.tool_entities import ToolInvokeMessage, ToolParameter
 from core.tools.tool_engine import ToolEngine
-from core.tools.tool_manager import ToolManager
 from core.tools.utils.message_transformer import ToolFileMessageTransformer
 from core.workflow.entities.node_entities import NodeRunMetadataKey, NodeRunResult
 from core.workflow.entities.variable_pool import VariablePool
@@ -46,6 +45,8 @@ class ToolNode(BaseNode[ToolNodeData]):
 
         # get tool runtime
         try:
+            from core.tools.tool_manager import ToolManager
+
             tool_runtime = ToolManager.get_workflow_tool_runtime(
                 self.tenant_id, self.app_id, self.node_id, self.node_data, self.invoke_from
             )
@@ -57,6 +58,7 @@ class ToolNode(BaseNode[ToolNodeData]):
                     NodeRunMetadataKey.TOOL_INFO: tool_info,
                 },
                 error=f"Failed to get tool runtime: {str(e)}",
+                error_type=type(e).__name__,
             )
 
         # get parameters
@@ -90,6 +92,17 @@ class ToolNode(BaseNode[ToolNodeData]):
                     NodeRunMetadataKey.TOOL_INFO: tool_info,
                 },
                 error=f"Failed to invoke tool: {str(e)}",
+                error_type=type(e).__name__,
+            )
+        except Exception as e:
+            return NodeRunResult(
+                status=WorkflowNodeExecutionStatus.FAILED,
+                inputs=parameters_for_log,
+                metadata={
+                    NodeRunMetadataKey.TOOL_INFO: tool_info,
+                },
+                error=f"Failed to invoke tool: {str(e)}",
+                error_type="UnknownError",
             )
 
         # convert tool messages
@@ -130,7 +143,7 @@ class ToolNode(BaseNode[ToolNodeData]):
         """
         tool_parameters_dictionary = {parameter.name: parameter for parameter in tool_parameters}
 
-        result = {}
+        result: dict[str, Any] = {}
         for parameter_name in node_data.tool_parameters:
             parameter = tool_parameters_dictionary.get(parameter_name)
             if not parameter:
@@ -180,7 +193,6 @@ class ToolNode(BaseNode[ToolNodeData]):
         for response in tool_response:
             if response.type in {ToolInvokeMessage.MessageType.IMAGE_LINK, ToolInvokeMessage.MessageType.IMAGE}:
                 url = str(response.message) if response.message else None
-                ext = path.splitext(url)[1] if url else ".bin"
                 tool_file_id = str(url).split("/")[-1].split(".")[0]
                 transfer_method = response.meta.get("transfer_method", FileTransferMethod.TOOL_FILE)
 
@@ -202,7 +214,6 @@ class ToolNode(BaseNode[ToolNodeData]):
                 )
                 result.append(file)
             elif response.type == ToolInvokeMessage.MessageType.BLOB:
-                # get tool file id
                 tool_file_id = str(response.message).split("/")[-1].split(".")[0]
                 with Session(db.engine) as session:
                     stmt = select(ToolFile).where(ToolFile.id == tool_file_id)
@@ -211,7 +222,6 @@ class ToolNode(BaseNode[ToolNodeData]):
                         raise ValueError(f"tool file {tool_file_id} not exists")
                 mapping = {
                     "tool_file_id": tool_file_id,
-                    "type": FileType.IMAGE,
                     "transfer_method": FileTransferMethod.TOOL_FILE,
                 }
                 file = file_factory.build_from_mapping(
@@ -223,18 +233,17 @@ class ToolNode(BaseNode[ToolNodeData]):
                 url = str(response.message)
                 transfer_method = FileTransferMethod.TOOL_FILE
                 tool_file_id = url.split("/")[-1].split(".")[0]
+                try:
+                    UUID(tool_file_id)
+                except ValueError:
+                    raise ToolFileError(f"cannot extract tool file id from url {url}")
                 with Session(db.engine) as session:
                     stmt = select(ToolFile).where(ToolFile.id == tool_file_id)
                     tool_file = session.scalar(stmt)
                     if tool_file is None:
                         raise ToolFileError(f"Tool file {tool_file_id} does not exist")
-                if "." in url:
-                    extension = "." + url.split("/")[-1].split(".")[1]
-                else:
-                    extension = ".bin"
                 mapping = {
                     "tool_file_id": tool_file_id,
-                    "type": FileType.IMAGE,
                     "transfer_method": transfer_method,
                     "url": url,
                 }
@@ -256,12 +265,11 @@ class ToolNode(BaseNode[ToolNodeData]):
         """
         return "\n".join(
             [
-                f"{message.message}"
+                str(message.message)
                 if message.type == ToolInvokeMessage.MessageType.TEXT
-                else f"Link: {message.message}"
-                if message.type == ToolInvokeMessage.MessageType.LINK
-                else ""
+                else f"Link: {str(message.message)}"
                 for message in tool_response
+                if message.type in {ToolInvokeMessage.MessageType.TEXT, ToolInvokeMessage.MessageType.LINK}
             ]
         )
 

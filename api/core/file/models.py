@@ -28,8 +28,8 @@ class FileUploadConfig(BaseModel):
 
     image_config: Optional[ImageConfig] = None
     allowed_file_types: Sequence[FileType] = Field(default_factory=list)
-    allowed_extensions: Sequence[str] = Field(default_factory=list)
-    allowed_upload_methods: Sequence[FileTransferMethod] = Field(default_factory=list)
+    allowed_file_extensions: Sequence[str] = Field(default_factory=list)
+    allowed_file_upload_methods: Sequence[FileTransferMethod] = Field(default_factory=list)
     number_limits: int = 0
 
 
@@ -46,6 +46,38 @@ class File(BaseModel):
     extension: Optional[str] = Field(default=None, description="File extension, should contains dot")
     mime_type: Optional[str] = None
     size: int = -1
+
+    # Those properties are private, should not be exposed to the outside.
+    _storage_key: str
+
+    def __init__(
+        self,
+        *,
+        id: Optional[str] = None,
+        tenant_id: str,
+        type: FileType,
+        transfer_method: FileTransferMethod,
+        remote_url: Optional[str] = None,
+        related_id: Optional[str] = None,
+        filename: Optional[str] = None,
+        extension: Optional[str] = None,
+        mime_type: Optional[str] = None,
+        size: int = -1,
+        storage_key: str,
+    ):
+        super().__init__(
+            id=id,
+            tenant_id=tenant_id,
+            type=type,
+            transfer_method=transfer_method,
+            remote_url=remote_url,
+            related_id=related_id,
+            filename=filename,
+            extension=extension,
+            mime_type=mime_type,
+            size=size,
+        )
+        self._storage_key = storage_key
 
     def to_dict(self) -> Mapping[str, str | int | None]:
         data = self.model_dump(mode="json")

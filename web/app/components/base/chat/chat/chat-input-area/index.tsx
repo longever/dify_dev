@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useRef,
   useState,
 } from 'react'
 import Textarea from 'rc-textarea'
@@ -38,6 +39,7 @@ type ChatInputAreaProps = {
   inputs?: Record<string, any>
   inputsForm?: InputForm[]
   theme?: Theme | null
+  isResponding?: boolean
 }
 const ChatInputArea = ({
   showFeatureBar,
@@ -50,6 +52,7 @@ const ChatInputArea = ({
   inputs = {},
   inputsForm = [],
   theme,
+  isResponding,
 }: ChatInputAreaProps) => {
   const { t } = useTranslation()
   const { notify } = useToastContext()
@@ -73,8 +76,14 @@ const ChatInputArea = ({
     isDragActive,
   } = useFile(visionConfig!)
   const { checkInputsForm } = useCheckInputsForms()
-
+  const historyRef = useRef([''])
+  const [currentIndex, setCurrentIndex] = useState(-1)
   const handleSend = () => {
+    if (isResponding) {
+      notify({ type: 'info', message: t('appDebug.errorMessage.waitForResponse') })
+      return
+    }
+
     if (onSend) {
       const { files, setFiles } = filesStore.getState()
       if (files.find(item => item.transferMethod === TransferMethod.local_file && !item.uploadedId)) {
@@ -92,12 +101,32 @@ const ChatInputArea = ({
       }
     }
   }
-
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
       setQuery(query.replace(/\n$/, ''))
+      historyRef.current.push(query)
+      setCurrentIndex(historyRef.current.length)
       handleSend()
+    }
+    else if (e.key === 'ArrowUp' && !e.shiftKey && !e.nativeEvent.isComposing && e.metaKey) {
+      // When the cmd + up key is pressed, output the previous element
+      if (currentIndex > 0) {
+        setCurrentIndex(currentIndex - 1)
+        setQuery(historyRef.current[currentIndex - 1])
+      }
+    }
+    else if (e.key === 'ArrowDown' && !e.shiftKey && !e.nativeEvent.isComposing && e.metaKey) {
+      // When the cmd + down key is pressed, output the next element
+      if (currentIndex < historyRef.current.length - 1) {
+        setCurrentIndex(currentIndex + 1)
+        setQuery(historyRef.current[currentIndex + 1])
+      }
+      else if (currentIndex === historyRef.current.length - 1) {
+        // If it is the last element, clear the input box
+        setCurrentIndex(historyRef.current.length)
+        setQuery('')
+      }
     }
   }
 
@@ -147,6 +176,7 @@ const ChatInputArea = ({
                   'p-1 w-full leading-6 body-lg-regular text-text-tertiary outline-none',
                 )}
                 placeholder={t('common.chat.inputPlaceholder') || ''}
+                autoFocus
                 autoSize={{ minRows: 1 }}
                 onResize={handleTextareaResize}
                 value={query}
