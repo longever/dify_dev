@@ -22,7 +22,12 @@ from core.helper import encrypter
 from core.helper.model_provider_cache import ProviderCredentialsCache, ProviderCredentialsCacheType
 from core.helper.position_helper import is_filtered
 from core.model_runtime.entities.model_entities import ModelType
-from core.model_runtime.entities.provider_entities import CredentialFormSchema, FormType, ProviderEntity
+from core.model_runtime.entities.provider_entities import (
+    ConfigurateMethod,
+    CredentialFormSchema,
+    FormType,
+    ProviderEntity,
+)
 from core.model_runtime.model_providers import model_provider_factory
 from extensions import ext_hosting_provider
 from extensions.ext_database import db
@@ -447,11 +452,9 @@ class ProviderManager:
 
         provider_name_to_provider_load_balancing_model_configs_dict = defaultdict(list)
         for provider_load_balancing_config in provider_load_balancing_configs:
-            (
-                provider_name_to_provider_load_balancing_model_configs_dict[
-                    provider_load_balancing_config.provider_name
-                ].append(provider_load_balancing_config)
-            )
+            provider_name_to_provider_load_balancing_model_configs_dict[
+                provider_load_balancing_config.provider_name
+            ].append(provider_load_balancing_config)
 
         return provider_name_to_provider_load_balancing_model_configs_dict
 
@@ -835,11 +838,18 @@ class ProviderManager:
         :return:
         """
         # Get provider model credential secret variables
-        model_credential_secret_variables = self._extract_secret_variables(
-            provider_entity.model_credential_schema.credential_form_schemas
-            if provider_entity.model_credential_schema
-            else []
-        )
+        if ConfigurateMethod.PREDEFINED_MODEL in provider_entity.configurate_methods:
+            model_credential_secret_variables = self._extract_secret_variables(
+                provider_entity.provider_credential_schema.credential_form_schemas
+                if provider_entity.provider_credential_schema
+                else []
+            )
+        else:
+            model_credential_secret_variables = self._extract_secret_variables(
+                provider_entity.model_credential_schema.credential_form_schemas
+                if provider_entity.model_credential_schema
+                else []
+            )
 
         model_settings: list[ModelSettings] = []
         if not provider_model_settings:
