@@ -68,11 +68,8 @@ const preprocessLaTeX = (content: string) => {
 }
 
 const preprocessThinkTag = (content: string) => {
-  if (!content.trim().startsWith('<think>\n'))
-    return content
-
   return flow([
-    (str: string) => str.replace('<think>\n', '<details>\n'),
+    (str: string) => str.replace('<think>\n', '<details data-think=true>\n'),
     (str: string) => str.replace('\n</think>', '\n[ENDTHINKFLAG]</details>'),
   ])(content)
 }
@@ -214,7 +211,9 @@ const Paragraph = (paragraph: any) => {
     return (
       <>
         <ImageGallery srcs={[children_node[0].properties.src]} />
-        <p>{paragraph.children.slice(1)}</p>
+        {
+          Array.isArray(paragraph.children) ? <p>{paragraph.children.slice(1)}</p> : null
+        }
       </>
     )
   }
@@ -261,6 +260,11 @@ export function Markdown(props: { content: string; className?: string }) {
                 if (node.type === 'element' && node.properties?.ref)
                   delete node.properties.ref
 
+                if (node.type === 'element' && !/^[a-z][a-z0-9]*$/i.test(node.tagName)) {
+                  node.type = 'text'
+                  node.value = `<${node.tagName}`
+                }
+
                 if (node.children)
                   node.children.forEach(iterate)
               }
@@ -268,7 +272,7 @@ export function Markdown(props: { content: string; className?: string }) {
             }
           },
         ]}
-        disallowedElements={['iframe', 'head', 'html', 'meta', 'link', 'style', 'body']}
+        disallowedElements={['iframe', 'head', 'html', 'meta', 'link', 'style', 'body', 'input']}
         components={{
           code: CodeBlock,
           img: Img,

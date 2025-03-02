@@ -6,10 +6,10 @@ from collections.abc import Iterator, Sequence
 from json import JSONDecodeError
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import or_
 
 from constants import HIDDEN_VALUE
-from core.entities import DEFAULT_PLUGIN_ID
 from core.entities.model_entities import ModelStatus, ModelWithProviderEntity, SimpleModelProviderEntity
 from core.entities.provider_entities import (
     CustomConfiguration,
@@ -28,6 +28,7 @@ from core.model_runtime.entities.provider_entities import (
 )
 from core.model_runtime.model_providers.__base.ai_model import AIModel
 from core.model_runtime.model_providers.model_provider_factory import ModelProviderFactory
+from core.plugin.entities.plugin import ModelProviderID
 from extensions.ext_database import db
 from models.provider import (
     LoadBalancingModelConfig,
@@ -190,8 +191,11 @@ class ProviderConfiguration(BaseModel):
             db.session.query(Provider)
             .filter(
                 Provider.tenant_id == self.tenant_id,
-                Provider.provider_name == self.provider.provider,
                 Provider.provider_type == ProviderType.CUSTOM.value,
+                or_(
+                    Provider.provider_name == ModelProviderID(self.provider.provider).plugin_name,
+                    Provider.provider_name == self.provider.provider,
+                ),
             )
             .first()
         )
@@ -279,7 +283,10 @@ class ProviderConfiguration(BaseModel):
             db.session.query(Provider)
             .filter(
                 Provider.tenant_id == self.tenant_id,
-                Provider.provider_name == self.provider.provider,
+                or_(
+                    Provider.provider_name == ModelProviderID(self.provider.provider).plugin_name,
+                    Provider.provider_name == self.provider.provider,
+                ),
                 Provider.provider_type == ProviderType.CUSTOM.value,
             )
             .first()
@@ -996,7 +1003,7 @@ class ProviderConfigurations(BaseModel):
     """
 
     tenant_id: str
-    configurations: dict[str, ProviderConfiguration] = {}
+    configurations: dict[str, ProviderConfiguration] = Field(default_factory=dict)
 
     def __init__(self, tenant_id: str):
         super().__init__(tenant_id=tenant_id)
@@ -1052,7 +1059,7 @@ class ProviderConfigurations(BaseModel):
 
     def __getitem__(self, key):
         if "/" not in key:
-            key = f"{DEFAULT_PLUGIN_ID}/{key}/{key}"
+            key = str(ModelProviderID(key))
 
         return self.configurations[key]
 
@@ -1067,7 +1074,7 @@ class ProviderConfigurations(BaseModel):
 
     def get(self, key, default=None) -> ProviderConfiguration | None:
         if "/" not in key:
-            key = f"{DEFAULT_PLUGIN_ID}/{key}/{key}"
+            key = str(ModelProviderID(key))
 
         return self.configurations.get(key, default)  # type: ignore
 
